@@ -2,11 +2,6 @@ name: Deploy Lab
 
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths:
-      - apps/lab.compose.example.yml
-      - .github/workflows/deploy-lab.yml
 
 jobs:
   deploy:

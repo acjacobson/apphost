@@ -85,7 +85,7 @@ REQUIRE_CADDY=1 ./scripts/verify.sh
 
 ## 7. Configure GitHub Actions deployment
 
-The `Deploy Lab` workflow in this repository deploys the Lab app to the host over SSH.
+The `Deploy Lab` workflow in this repository deploys the Lab app to the host over SSH. It is manually triggered with `workflow_dispatch` so infrastructure changes do not deploy automatically.
 
 Add these repository secrets to the Apphost GitHub repository:
 
