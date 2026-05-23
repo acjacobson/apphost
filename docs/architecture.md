@@ -1,31 +1,54 @@
 # Architecture
 
-Apphost is a generic host pattern for running multiple web apps on one Linux server.
+Apphost prepares a generic Docker host for multiple independently deployed applications.
 
-## Core components
+## Responsibilities
 
-- Docker runs each app in an isolated container or compose project.
-- A shared Docker network named `web` lets the reverse proxy reach app containers by service name.
-- Caddy terminates HTTP/HTTPS traffic and routes hostnames to apps.
-- Each app keeps its own source code, runtime config, and deploy process.
+Apphost owns:
 
-## Directory model
+- the Linux host bootstrap
+- the `deploy` user
+- the shared app root, default `/opt/apps`
+- the external Docker network named `web`
+- the shared Traefik reverse proxy
+- host-level firewall and SSH hardening helpers
 
-A typical server layout is:
+Application repositories own:
+
+- app source code
+- app Dockerfile
+- app compose file
+- app environment variables
+- app domain labels
+- app deployment workflow
+- app smoke tests
+
+## Runtime layout
 
 ```text
 /opt/apps/
-  caddy/
-    docker-compose.yml
-    Caddyfile
-  lab/
-    docker-compose.yml
-    .env
-    repo/
-  another-app/
-    docker-compose.yml
-    .env
-    repo/
+  docker-compose.yml        # shared Traefik proxy only
+  .env                      # proxy-level environment, no app secrets
+  traefik/
+    letsencrypt/
+      acme.json
+  <app-name>/
+    docker-compose.yml      # app-owned
+    .env                    # app-owned
+    repo/                   # app-owned checkout, if using git-pull deploys
 ```
 
-This repository provides examples and bootstrap helpers for that pattern. Exact server files should be reviewed before applying them in production.
+## Routing model
+
+Traefik watches Docker labels. Apps opt in by joining the external `web` network and setting labels on their own container, for example:
+
+```yaml
+labels:
+  - traefik.enable=true
+  - traefik.http.routers.example.rule=Host(`example.com`)
+  - traefik.http.routers.example.entrypoints=websecure
+  - traefik.http.routers.example.tls.certresolver=letsencrypt
+  - traefik.http.services.example.loadbalancer.server.port=8080
+```
+
+This lets app repositories deploy themselves without editing Apphost files.

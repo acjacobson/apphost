@@ -28,7 +28,7 @@ Expose only required public ports. A typical web host allows:
 
 ## Restart behavior
 
-Shared Caddy and app compose examples use Docker restart policy `unless-stopped`. Containers restart after crashes and after server reboots unless explicitly stopped by an operator.
+The shared Traefik proxy uses Docker restart policy `unless-stopped`. Application repositories should use an appropriate restart policy for their own services.
 
 ## Review before running scripts
 

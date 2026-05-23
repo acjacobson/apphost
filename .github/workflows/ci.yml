@@ -17,10 +17,8 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y shellcheck
           shellcheck scripts/*.sh
-      - name: Validate Caddy compose example
-        run: docker compose -f caddy/compose.yml config >/tmp/apphost-caddy.yml
-      - name: Validate Lab app compose example
-        run: docker compose -f apps/lab.compose.example.yml config >/tmp/apphost-lab.yml
+      - name: Validate proxy compose
+        run: docker compose -f proxy/compose.yml config >/tmp/apphost-proxy.yml
       - name: Check for obvious committed secrets
         run: |
           python3 - <<'PY'
@@ -35,7 +33,6 @@ jobs:
               re.compile(r"(PASSWORD|SECRET|API_KEY)\s*=\s*[^\s#]+"),
           ]
           excluded_dirs = {".git"}
-          excluded_suffixes = (".example", ".example.yml")
           hits = []
 
           for path in Path(".").rglob("*"):
@@ -44,8 +41,6 @@ jobs:
               if any(part in excluded_dirs for part in path.parts):
                   continue
               if path.as_posix() == ".github/workflows/ci.yml":
-                  continue
-              if path.name.endswith(excluded_suffixes):
                   continue
               try:
                   text = path.read_text(errors="ignore")

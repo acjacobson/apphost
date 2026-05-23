@@ -1,22 +1,21 @@
-# Hetzner notes
+# Provider notes: Hetzner
 
-Apphost is provider-neutral. These notes cover using the pattern on a Hetzner Cloud VM.
+Apphost is provider-neutral. These notes are for using a generic Hetzner Cloud VM as the host.
 
-## Recommended VM baseline
+## Server image
 
-- Ubuntu LTS
-- Public IPv4 address
-- SSH key authentication
-- Firewall allowing SSH, HTTP, and HTTPS
+Use an Ubuntu LTS image.
+
+## Firewall
+
+At minimum, allow:
+
+- 22/tcp for SSH
+- 80/tcp for HTTP
+- 443/tcp for HTTPS
+
+You can use Hetzner Cloud firewall rules, UFW on the server, or both.
 
 ## DNS
 
-Create an A record pointing the app hostname to the VM public IP, for example:
-
-```text
-lab.example.com -> 203.0.113.10
-```
-
-## Provider-specific work not included
-
-This repository does not currently manage Hetzner Cloud resources through Terraform or the Hetzner API. If provider-managed firewalls, volumes, snapshots, or floating IPs become important, add them under a provider-specific directory and keep the generic host pattern separate.
+For each application, create an `A` record pointing the app hostname to the VM IPv4 address. The application repository owns the hostname and Traefik labels for that app.

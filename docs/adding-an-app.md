@@ -1,56 +1,40 @@
-# Adding an app
+# Adding an application
 
-This guide describes the generic process for adding an application to an Apphost server.
+Applications are added by their own repositories. Apphost only provides the shared Docker host and Traefik proxy.
 
-## 1. Create an app directory
+## Requirements for an app repo
 
-```bash
-sudo mkdir -p /opt/apps/my-app
-sudo chown -R deploy:deploy /opt/apps/my-app
-```
+An app repo should provide:
 
-## 2. Add app source or image configuration
+- a Dockerfile
+- a production Docker Compose file
+- a GitHub Actions deployment workflow or equivalent deploy script
+- Traefik labels for the app hostname
+- a smoke test
 
-For a git-based deployment:
+## Host contract
 
-```bash
-cd /opt/apps/my-app
-git clone https://github.com/example/my-app.git repo
-```
+The host provides:
 
-## 3. Add a compose file
+- SSH access as `deploy`
+- app root at `/opt/apps`
+- external Docker network `web`
+- Traefik listening on 80 and 443
 
-The app compose file should join the external `web` network and expose its internal HTTP port.
-
-```yaml
-services:
-  my-app:
-    build:
-      context: ./repo
-      dockerfile: deploy/Dockerfile
-    restart: unless-stopped
-    expose:
-      - "8080"
-    networks:
-      - web
-
-networks:
-  web:
-    external: true
-```
-
-## 4. Add a Caddy route
-
-```caddyfile
-my-app.example.com {
-    reverse_proxy my-app:8080
-}
-```
-
-## 5. Start and verify
+## Typical deploy flow from an app repo
 
 ```bash
-cd /opt/apps/my-app
-docker compose up -d --build
-curl -fsS https://my-app.example.com/healthz
+ssh deploy@example-host '
+  set -e
+  mkdir -p /opt/apps/example
+  cd /opt/apps/example
+  git clone https://github.com/example/example.git repo || true
+  git -C repo fetch origin
+  git -C repo checkout main
+  git -C repo pull --ff-only origin main
+  cp repo/deploy/docker-compose.prod.yml docker-compose.yml
+  docker compose up -d --build
+'
 ```
+
+The exact deploy flow belongs to the app repo, not Apphost.

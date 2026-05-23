@@ -1,45 +1,38 @@
 # Operations
 
-## Start shared proxy
+## Verify the host
 
 ```bash
-cd /opt/apps/caddy
-docker compose up -d
+cd /opt/apphost
+APP_ROOT=/opt/apps REQUIRE_PROXY=1 ./scripts/verify.sh
 ```
 
-## Reload Caddy config
+## Restart the shared proxy
 
 ```bash
-cd /opt/apps/caddy
-docker compose exec caddy caddy reload --config /etc/caddy/Caddyfile
+cd /opt/apps
+docker compose up -d traefik
 ```
 
-## Deploy an app manually
+## View proxy logs
 
 ```bash
-cd /opt/apps/lab/repo
-git fetch origin
-git checkout main
-git pull origin main
-cd /opt/apps/lab
-docker compose up -d --build
-curl -fsS https://lab.example.com/healthz
+docker logs --tail=100 apphost-traefik
 ```
 
-## Inspect logs
+## List app containers
 
 ```bash
-docker logs --tail=100 apphost-caddy
-docker logs --tail=100 lab
+docker ps
 ```
 
-## Rollback pattern
+## Backups
 
-Use the application repository's git history or pinned image tags. For git-based deployments:
+Back up host-level proxy data:
 
-```bash
-cd /opt/apps/lab/repo
-git checkout <previous-commit>
-cd /opt/apps/lab
-docker compose up -d --build
+```text
+/opt/apps/.env
+/opt/apps/traefik/letsencrypt/acme.json
 ```
+
+Application data, app `.env` files, and app volumes are owned by each application and should be covered by that application's operations docs.
