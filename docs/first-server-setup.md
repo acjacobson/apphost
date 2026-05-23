@@ -22,6 +22,8 @@ cd /opt/apphost
 
 This installs Docker, Docker Compose, UFW, unattended upgrades, creates the deploy user, creates `/opt/apps`, and creates the shared `web` Docker network.
 
+Ubuntu package names for Docker Compose vary by release. The bootstrap script tries `docker-compose-plugin`, `docker-compose-v2`, and `docker-compose` as fallbacks after installing `docker.io`.
+
 ```bash
 APP_USER=deploy APP_ROOT=/opt/apps ./scripts/bootstrap.sh
 ```

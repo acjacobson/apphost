@@ -18,10 +18,23 @@ apt-get install -y \
   curl \
   git \
   gnupg \
-  docker.io \
-  docker-compose-plugin \
   ufw \
   unattended-upgrades
+
+apt-get install -y docker.io
+
+if ! docker compose version >/dev/null 2>&1; then
+  if apt-cache show docker-compose-plugin >/dev/null 2>&1; then
+    apt-get install -y docker-compose-plugin
+  elif apt-cache show docker-compose-v2 >/dev/null 2>&1; then
+    apt-get install -y docker-compose-v2
+  elif apt-cache show docker-compose >/dev/null 2>&1; then
+    apt-get install -y docker-compose
+  else
+    echo "Could not find a Docker Compose package. Install Docker Compose manually, then re-run bootstrap."
+    exit 1
+  fi
+fi
 
 systemctl enable --now docker
 
