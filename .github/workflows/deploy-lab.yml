@@ -1,0 +1,74 @@
+name: Deploy Lab
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - apps/lab.compose.example.yml
+      - .github/workflows/deploy-lab.yml
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      APPHOST_HOST: ${{ secrets.APPHOST_HOST }}
+      APPHOST_USER: ${{ secrets.APPHOST_USER }}
+      APPHOST_SSH_KEY: ${{ secrets.APPHOST_SSH_KEY }}
+      APPHOST_APP_DIR: ${{ secrets.APPHOST_APP_DIR }}
+      APPHOST_DEPLOY_URL: ${{ secrets.APPHOST_DEPLOY_URL }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Validate required secrets
+        run: |
+          test -n "$APPHOST_HOST"
+          test -n "$APPHOST_USER"
+          test -n "$APPHOST_SSH_KEY"
+          test -n "$APPHOST_APP_DIR"
+
+      - name: Configure SSH
+        run: |
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$APPHOST_SSH_KEY" > ~/.ssh/apphost_deploy_key
+          chmod 600 ~/.ssh/apphost_deploy_key
+          ssh-keyscan -H "$APPHOST_HOST" >> ~/.ssh/known_hosts
+
+      - name: Prepare remote app directory
+        run: |
+          ssh -i ~/.ssh/apphost_deploy_key "$APPHOST_USER@$APPHOST_HOST" \
+            "mkdir -p '$APPHOST_APP_DIR'"
+
+      - name: Upload compose file
+        run: |
+          scp -i ~/.ssh/apphost_deploy_key \
+            apps/lab.compose.example.yml \
+            "$APPHOST_USER@$APPHOST_HOST:$APPHOST_APP_DIR/docker-compose.yml"
+
+      - name: Deploy Lab
+        run: |
+          ssh -i ~/.ssh/apphost_deploy_key "$APPHOST_USER@$APPHOST_HOST" \
+            "APPHOST_APP_DIR='$APPHOST_APP_DIR' bash -s" <<'REMOTE'
+          set -euo pipefail
+
+          cd "$APPHOST_APP_DIR"
+
+          if [ ! -d repo/.git ]; then
+            git clone https://github.com/acjacobson/lab.git repo
+          else
+            git -C repo fetch origin
+            git -C repo checkout main
+            git -C repo pull --ff-only origin main
+          fi
+
+          docker compose up -d --build
+          docker compose ps
+
+          docker exec lab python -c "import urllib.request; print(urllib.request.urlopen('http://127.0.0.1:8080/healthz', timeout=10).read().decode())"
+          REMOTE
+
+      - name: Optional external smoke test
+        if: env.APPHOST_DEPLOY_URL != ''
+        run: |
+          curl -fsS "$APPHOST_DEPLOY_URL/healthz"

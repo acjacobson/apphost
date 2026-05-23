@@ -83,15 +83,42 @@ Caddy runs with Docker restart policy `unless-stopped`, so it starts again after
 REQUIRE_CADDY=1 ./scripts/verify.sh
 ```
 
-## 7. Later: install the Lab example app
+## 7. Configure GitHub Actions deployment
 
-After DNS points the Lab hostname to this server, install Lab:
+The `Deploy Lab` workflow in this repository deploys the Lab app to the host over SSH.
+
+Add these repository secrets to the Apphost GitHub repository:
+
+```text
+APPHOST_HOST=SERVER_IP_OR_HOSTNAME
+APPHOST_USER=deploy
+APPHOST_SSH_KEY=CONTENTS_OF_PRIVATE_DEPLOY_KEY
+APPHOST_APP_DIR=/opt/apps/lab
+```
+
+Optional, after DNS and Caddy are ready:
+
+```text
+APPHOST_DEPLOY_URL=https://lab.example.com
+```
+
+The deploy workflow uploads the Lab compose file from this repository, clones or updates `https://github.com/acjacobson/lab.git` on the server, runs `docker compose up -d --build`, and performs an internal health check.
+
+## 8. Later: install the Lab example app manually
+
+If you want to deploy Lab manually instead of using GitHub Actions:
 
 ```bash
 ./scripts/install-lab-example.sh
 ```
 
-Then verify:
+Then verify internally:
+
+```bash
+docker exec lab python -c "import urllib.request; print(urllib.request.urlopen('http://127.0.0.1:8080/healthz', timeout=10).read().decode())"
+```
+
+After DNS and Caddy are configured, verify externally:
 
 ```bash
 curl -fsS https://lab.example.com/healthz
