@@ -1,0 +1,10 @@
+# Example app registration for Lab.
+# Copy or adapt this into the target host's app directory.
+
+app: lab
+hostname: lab.example.com
+internal_port: 8080
+host_path: /opt/apps/lab
+repo_url: https://github.com/example/lab.git
+compose_file: docker-compose.yml
+health_url: https://lab.example.com/healthz
