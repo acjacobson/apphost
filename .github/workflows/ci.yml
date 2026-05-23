@@ -1,0 +1,28 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Check shell script syntax
+        run: bash -n scripts/*.sh
+      - name: Validate Caddy compose example
+        run: docker compose -f caddy/compose.yml config >/tmp/apphost-caddy.yml
+      - name: Validate Lab app compose example
+        run: docker compose -f apps/lab.compose.example.yml config >/tmp/apphost-lab.yml
+      - name: Check for obvious committed secrets
+        run: |
+          if grep -RInE '(BEGIN (RSA|OPENSSH|PRIVATE) KEY|AWS_SECRET_ACCESS_KEY|GITHUB_TOKEN=|PASSWORD=.+|SECRET=.+|API_KEY=.+)' \
+            --exclude-dir=.git \
+            --exclude='*.example' \
+            --exclude='*.example.yml' \
+            .; then
+            echo "Potential secret found. Review output above."
+            exit 1
+          fi
