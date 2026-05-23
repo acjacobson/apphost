@@ -12,6 +12,11 @@ jobs:
       - uses: actions/checkout@v6
       - name: Check shell script syntax
         run: bash -n scripts/*.sh
+      - name: Validate shell scripts with ShellCheck
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y shellcheck
+          shellcheck scripts/*.sh
       - name: Validate Caddy compose example
         run: docker compose -f caddy/compose.yml config >/tmp/apphost-caddy.yml
       - name: Validate Lab app compose example

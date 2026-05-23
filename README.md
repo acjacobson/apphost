@@ -20,13 +20,26 @@ It is intended to host several independently deployed web applications on one se
 - Secret values
 - Provider-specific infrastructure unless documented under `docs/providers/`
 
-## Quick start
+## First server setup
 
-Review scripts before running them on a server.
+Use the provider console or an SSH root session on a fresh server:
+
+```bash
+apt-get update
+apt-get install -y git
+git clone https://github.com/acjacobson/apphost.git /opt/apphost
+cd /opt/apphost
+APP_USER=deploy APP_ROOT=/opt/apps ./scripts/bootstrap.sh
+```
+
+Then follow `docs/first-server-setup.md` to add SSH keys, optionally harden SSH, install Caddy, and verify the host.
+
+## Common commands
 
 ```bash
 ./scripts/bootstrap.sh
+./scripts/install-caddy.sh
 ./scripts/verify.sh
 ```
 
-Copy examples into place and customize hostnames, app names, and paths for the target environment.
+Review scripts before running them on a server.

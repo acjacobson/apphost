@@ -8,20 +8,47 @@ fi
 
 APP_USER="${APP_USER:-deploy}"
 APP_ROOT="${APP_ROOT:-/opt/apps}"
+CONFIGURE_UFW="${CONFIGURE_UFW:-0}"
+
+export DEBIAN_FRONTEND=noninteractive
 
 apt-get update
-apt-get install -y ca-certificates curl gnupg docker.io docker-compose-plugin ufw
+apt-get install -y \
+  ca-certificates \
+  curl \
+  git \
+  gnupg \
+  docker.io \
+  docker-compose-plugin \
+  ufw \
+  unattended-upgrades
+
+systemctl enable --now docker
 
 if ! id "$APP_USER" >/dev/null 2>&1; then
   useradd -m -s /bin/bash "$APP_USER"
 fi
+
 usermod -aG docker "$APP_USER"
+usermod -aG sudo "$APP_USER"
 
 mkdir -p "$APP_ROOT"
 chown -R "$APP_USER:$APP_USER" "$APP_ROOT"
+chmod 755 "$APP_ROOT"
 
 if ! docker network inspect web >/dev/null 2>&1; then
   docker network create web
 fi
 
-echo "Bootstrap complete. Log out and back in if docker group membership was just added."
+if [ "$CONFIGURE_UFW" = "1" ]; then
+  ufw allow OpenSSH
+  ufw allow 80/tcp
+  ufw allow 443/tcp
+  ufw --force enable
+fi
+
+echo "Bootstrap complete."
+echo "App user: $APP_USER"
+echo "App root: $APP_ROOT"
+echo "Shared Docker network: web"
+echo "If $APP_USER was newly added to the docker group, log out and back in before using docker as that user."
