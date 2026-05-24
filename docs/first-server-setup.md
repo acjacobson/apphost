@@ -40,12 +40,12 @@ The firewall allows SSH, HTTP, and HTTPS.
 
 ## 3. Add SSH keys for deployment users
 
-Application repositories deploy over SSH as the `deploy` user. Add the public keys for the systems that should be allowed to deploy.
+Application repositories deploy over SSH as the `deploy` user. Use a separate deploy key per app repository so access can be rotated or revoked app-by-app. Store the private key as that app repo's `DEPLOY_SSH_KEY` secret and add only the matching public key to the VM.
 
 ```bash
 install -d -m 700 -o deploy -g deploy /home/deploy/.ssh
 cat >> /home/deploy/.ssh/authorized_keys <<'EOF'
-PASTE_PUBLIC_KEY_HERE
+PASTE_APP_PUBLIC_DEPLOY_KEY_HERE
 EOF
 chown deploy:deploy /home/deploy/.ssh/authorized_keys
 chmod 600 /home/deploy/.ssh/authorized_keys
