@@ -20,6 +20,7 @@ The host provides:
 - app root at `/opt/apps`
 - external Docker network `web`
 - Traefik listening on 80 and 443
+- optional operational registry entry in `/opt/apphost/apps.yml`
 
 ## Typical deploy flow from an app repo
 
@@ -38,3 +39,28 @@ ssh deploy@example-host '
 ```
 
 The exact deploy flow belongs to the app repo, not Apphost.
+
+## Register for operations
+
+After the app deploy path exists, add an inventory entry so the host can report status consistently:
+
+```yaml
+apps:
+  - name: example
+    repo: example/example
+    branch: main
+    host: example.com
+    path: /opt/apps/example
+    compose: /opt/apps/example/docker-compose.yml
+    healthcheck: https://example.com/healthz
+    env_file: /opt/apps/example/.env
+    data:
+      - /opt/apps/example/data
+```
+
+Then verify:
+
+```bash
+apphost status example
+apphost doctor example
+```

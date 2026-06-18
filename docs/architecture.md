@@ -23,6 +23,8 @@ Application repositories own:
 - app deployment workflow
 - app smoke tests
 
+Apphost also keeps a host-local app registry at `/opt/apphost/apps.yml`. The registry is an operational inventory, not the app deploy source. It lets `apphost status`, `apphost doctor`, and `apphost logs <app>` find the right paths and healthchecks without moving deployment ownership out of app repositories.
+
 ## Runtime layout
 
 ```text

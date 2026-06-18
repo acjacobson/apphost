@@ -1,0 +1,363 @@
+#!/usr/bin/env python3
+"""Small operational CLI for Apphost.
+
+Dependency-free by design: it parses the limited apps.yml shape used by Apphost
+so a fresh server only needs Python 3, Docker, and curl/urllib.
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import shutil
+import socket
+import subprocess
+import sys
+import time
+import urllib.error
+import urllib.request
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Iterable
+
+DEFAULT_REGISTRY = Path(os.environ.get("APPHOST_REGISTRY", "/opt/apphost/apps.yml"))
+DEFAULT_APP_ROOT = Path(os.environ.get("APP_ROOT", "/opt/apps"))
+
+
+@dataclass
+class App:
+    name: str
+    repo: str = ""
+    branch: str = "main"
+    host: str = ""
+    path: str = ""
+    compose: str = ""
+    healthcheck: str = ""
+    env_file: str = ""
+    data: list[str] = field(default_factory=list)
+
+    def app_path(self) -> Path:
+        return Path(self.path or str(DEFAULT_APP_ROOT / self.name))
+
+    def compose_path(self) -> Path:
+        return Path(self.compose or str(self.app_path() / "docker-compose.yml"))
+
+    def env_path(self) -> Path:
+        return Path(self.env_file or str(self.app_path() / ".env"))
+
+
+def die(message: str, code: int = 1) -> None:
+    print(f"error: {message}", file=sys.stderr)
+    raise SystemExit(code)
+
+
+def run(cmd: list[str], *, timeout: int = 20, cwd: Path | None = None) -> tuple[int, str]:
+    try:
+        proc = subprocess.run(
+            cmd,
+            cwd=str(cwd) if cwd else None,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            timeout=timeout,
+            check=False,
+        )
+        return proc.returncode, proc.stdout.strip()
+    except FileNotFoundError:
+        return 127, f"command not found: {cmd[0]}"
+    except subprocess.TimeoutExpired:
+        return 124, f"timeout after {timeout}s: {' '.join(cmd)}"
+
+
+def parse_scalar(value: str) -> str:
+    value = value.strip()
+    if not value:
+        return ""
+    if (value.startswith('"') and value.endswith('"')) or (value.startswith("'") and value.endswith("'")):
+        return value[1:-1]
+    return value
+
+
+def load_registry(path: Path = DEFAULT_REGISTRY) -> list[App]:
+    if not path.exists():
+        die(f"registry not found: {path}\nCreate it from apps.example.yml or set APPHOST_REGISTRY=/path/to/apps.yml")
+
+    apps: list[dict[str, object]] = []
+    current: dict[str, object] | None = None
+    in_apps = False
+    current_list_key: str | None = None
+
+    for raw in path.read_text().splitlines():
+        line = raw.split("#", 1)[0].rstrip()
+        if not line.strip():
+            continue
+        stripped = line.strip()
+        indent = len(line) - len(line.lstrip(" "))
+
+        if indent == 0 and stripped == "apps:":
+            in_apps = True
+            continue
+        if not in_apps:
+            continue
+
+        if indent == 2 and stripped.startswith("- "):
+            if current:
+                apps.append(current)
+            current = {}
+            current_list_key = None
+            rest = stripped[2:].strip()
+            if rest:
+                key, sep, value = rest.partition(":")
+                if not sep:
+                    die(f"invalid app item in {path}: {raw}")
+                current[key.strip()] = parse_scalar(value)
+            continue
+
+        if current is None:
+            continue
+
+        if indent == 4 and ":" in stripped:
+            key, _, value = stripped.partition(":")
+            key = key.strip()
+            value = value.strip()
+            if value:
+                current[key] = parse_scalar(value)
+                current_list_key = None
+            else:
+                current[key] = []
+                current_list_key = key
+            continue
+
+        if indent == 6 and stripped.startswith("- ") and current_list_key:
+            current.setdefault(current_list_key, [])
+            assert isinstance(current[current_list_key], list)
+            current[current_list_key].append(parse_scalar(stripped[2:]))
+            continue
+
+        die(f"unsupported registry syntax in {path}: {raw}")
+
+    if current:
+        apps.append(current)
+
+    parsed: list[App] = []
+    for item in apps:
+        name = str(item.get("name", "")).strip()
+        if not name:
+            die(f"app without name in {path}")
+        data = item.get("data", [])
+        if isinstance(data, str):
+            data = [data]
+        parsed.append(
+            App(
+                name=name,
+                repo=str(item.get("repo", "")),
+                branch=str(item.get("branch", "main")),
+                host=str(item.get("host", "")),
+                path=str(item.get("path", "")),
+                compose=str(item.get("compose", "")),
+                healthcheck=str(item.get("healthcheck", "")),
+                env_file=str(item.get("env_file", "")),
+                data=[str(x) for x in data],
+            )
+        )
+    return parsed
+
+
+def select_apps(apps: list[App], name: str | None) -> list[App]:
+    if not name:
+        return apps
+    matches = [app for app in apps if app.name == name]
+    if not matches:
+        die(f"unknown app: {name}")
+    return matches
+
+
+def ok_mark(ok: bool) -> str:
+    return "ok" if ok else "FAIL"
+
+
+def check_health(url: str) -> tuple[bool, str]:
+    if not url:
+        return False, "not configured"
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "apphost/0"})
+        with urllib.request.urlopen(req, timeout=8) as resp:
+            code = resp.getcode()
+        return 200 <= code < 400, f"HTTP {code}"
+    except urllib.error.HTTPError as exc:
+        return False, f"HTTP {exc.code}"
+    except Exception as exc:  # noqa: BLE001 - operator-facing diagnostic
+        return False, str(exc)
+
+
+def docker_compose_ps(compose: Path) -> tuple[bool, str]:
+    if not compose.exists():
+        return False, "compose missing"
+    code, out = run(["docker", "compose", "-f", str(compose), "ps", "--format", "json"], timeout=20)
+    if code != 0:
+        return False, out or "docker compose ps failed"
+    if not out:
+        return False, "no containers"
+    # Compose emits JSON array on newer versions and JSON lines on some older versions.
+    try:
+        parsed = json.loads(out)
+        rows = parsed if isinstance(parsed, list) else [parsed]
+    except json.JSONDecodeError:
+        rows = []
+        for line in out.splitlines():
+            try:
+                rows.append(json.loads(line))
+            except json.JSONDecodeError:
+                pass
+    if not rows:
+        return True, "containers listed"
+    states = [str(row.get("State") or row.get("Status") or "unknown") for row in rows if isinstance(row, dict)]
+    running = [state for state in states if "running" in state.lower()]
+    if states and len(running) == len(states):
+        return True, f"{len(states)} running"
+    return False, ", ".join(states) if states else "unknown container state"
+
+
+def app_status(app: App) -> dict[str, tuple[bool, str]]:
+    app_path = app.app_path()
+    compose = app.compose_path()
+    env_file = app.env_path()
+    data_paths = app.data
+    health_ok, health_msg = check_health(app.healthcheck) if app.healthcheck else (False, "not configured")
+    containers_ok, containers_msg = docker_compose_ps(compose)
+    return {
+        "path": (app_path.exists(), str(app_path)),
+        "compose": (compose.exists(), str(compose)),
+        "env": (env_file.exists(), str(env_file)),
+        "data": (all(Path(p).exists() for p in data_paths), ", ".join(data_paths) if data_paths else "not configured"),
+        "containers": (containers_ok, containers_msg),
+        "health": (health_ok, health_msg),
+    }
+
+
+def print_app_summary(app: App) -> None:
+    status = app_status(app)
+    health = status["health"]
+    containers = status["containers"]
+    print(f"{app.name:16} host={app.host or '-':32} containers={ok_mark(containers[0])}:{containers[1]} health={ok_mark(health[0])}:{health[1]}")
+
+
+def cmd_list(args: argparse.Namespace) -> int:
+    apps = load_registry(Path(args.registry))
+    for app in apps:
+        print(f"{app.name}\t{app.host or '-'}\t{app.repo or '-'}")
+    return 0
+
+
+def cmd_status(args: argparse.Namespace) -> int:
+    apps = select_apps(load_registry(Path(args.registry)), args.app)
+    failed = False
+    for app in apps:
+        if args.summary:
+            print_app_summary(app)
+            failed = failed or not all(ok for ok, _ in app_status(app).values() if _ != "not configured")
+            continue
+        print(f"== {app.name} ==")
+        print(f"repo:        {app.repo or '-'}")
+        print(f"branch:      {app.branch}")
+        print(f"host:        {app.host or '-'}")
+        for key, (ok, msg) in app_status(app).items():
+            if msg == "not configured":
+                print(f"{key:12} skip  {msg}")
+            else:
+                print(f"{key:12} {ok_mark(ok):4}  {msg}")
+                failed = failed or not ok
+    return 1 if failed else 0
+
+
+def cmd_logs(args: argparse.Namespace) -> int:
+    apps = select_apps(load_registry(Path(args.registry)), args.app)
+    app = apps[0]
+    compose = app.compose_path()
+    if not compose.exists():
+        die(f"compose missing for {app.name}: {compose}")
+    cmd = ["docker", "compose", "-f", str(compose), "logs", "--tail", str(args.tail)]
+    if args.follow:
+        cmd.append("--follow")
+    if args.service:
+        cmd.append(args.service)
+    os.execvp(cmd[0], cmd)
+    return 127
+
+
+def check_host() -> list[tuple[str, bool, str]]:
+    checks: list[tuple[str, bool, str]] = []
+    checks.append(("docker binary", shutil.which("docker") is not None, shutil.which("docker") or "missing"))
+    code, out = run(["docker", "info"], timeout=20)
+    checks.append(("docker daemon", code == 0, out.splitlines()[0] if out else "ok"))
+    code, out = run(["docker", "compose", "version"], timeout=20)
+    checks.append(("docker compose", code == 0, out or "missing"))
+    code, out = run(["docker", "network", "inspect", "web"], timeout=20)
+    checks.append(("web network", code == 0, "exists" if code == 0 else out))
+    code, out = run(["docker", "ps", "--filter", "name=apphost-traefik", "--filter", "status=running", "--format", "{{.Names}} {{.Status}}"], timeout=20)
+    checks.append(("traefik", bool(out.strip()), out or "apphost-traefik not running"))
+    for port in (80, 443):
+        sock = socket.socket()
+        sock.settimeout(1)
+        try:
+            ok = sock.connect_ex(("127.0.0.1", port)) == 0
+        finally:
+            sock.close()
+        checks.append((f"localhost:{port}", ok, "listening" if ok else "not listening"))
+    usage = shutil.disk_usage(str(DEFAULT_APP_ROOT if DEFAULT_APP_ROOT.exists() else Path("/")))
+    free_pct = usage.free / usage.total * 100
+    checks.append(("disk free", free_pct >= 10, f"{free_pct:.1f}% free"))
+    return checks
+
+
+def cmd_doctor(args: argparse.Namespace) -> int:
+    failed = False
+    print("== host ==")
+    for name, ok, msg in check_host():
+        print(f"{name:18} {ok_mark(ok):4}  {msg}")
+        failed = failed or not ok
+    print("\n== apps ==")
+    apps = select_apps(load_registry(Path(args.registry)), args.app)
+    for app in apps:
+        print_app_summary(app)
+        for key, (ok, msg) in app_status(app).items():
+            if msg != "not configured":
+                failed = failed or not ok
+    return 1 if failed else 0
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description="Operate an Apphost server from its app registry")
+    parser.add_argument("--registry", default=str(DEFAULT_REGISTRY), help="apps.yml path, default /opt/apphost/apps.yml")
+    sub = parser.add_subparsers(dest="command", required=True)
+
+    p_list = sub.add_parser("list", help="List registered apps")
+    p_list.set_defaults(func=cmd_list)
+
+    p_status = sub.add_parser("status", help="Show app status")
+    p_status.add_argument("app", nargs="?", help="optional app name")
+    p_status.add_argument("--summary", action="store_true", help="compact one-line status")
+    p_status.set_defaults(func=cmd_status)
+
+    p_doctor = sub.add_parser("doctor", help="Check host and app health")
+    p_doctor.add_argument("app", nargs="?", help="optional app name")
+    p_doctor.set_defaults(func=cmd_doctor)
+
+    p_logs = sub.add_parser("logs", help="Show docker compose logs for an app")
+    p_logs.add_argument("app", help="app name")
+    p_logs.add_argument("service", nargs="?", help="optional compose service")
+    p_logs.add_argument("--tail", type=int, default=200)
+    p_logs.add_argument("-f", "--follow", action="store_true")
+    p_logs.set_defaults(func=cmd_logs)
+
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    return int(args.func(args))
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

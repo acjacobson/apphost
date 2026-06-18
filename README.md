@@ -9,6 +9,8 @@ It provisions the server substrate only. Application repositories own their own 
 - Docker installation bootstrap helpers
 - A shared Docker network named `web`
 - A shared Traefik reverse proxy
+- A small `apphost` operations CLI
+- A central app registry at `/opt/apphost/apps.yml`
 - Host-level firewall and SSH hardening helpers
 - Host-level operations documentation
 
@@ -32,7 +34,20 @@ git clone https://github.com/acjacobson/apphost.git /opt/apphost
 cd /opt/apphost
 APP_USER=deploy APP_ROOT=/opt/apps ./scripts/bootstrap.sh
 TRAEFIK_ACME_EMAIL=admin@example.com APP_ROOT=/opt/apps ./scripts/install-proxy.sh
+APPHOST_DIR=/opt/apphost ./scripts/install-cli.sh
 APP_ROOT=/opt/apps REQUIRE_PROXY=1 ./scripts/verify.sh
 ```
 
-Review `docs/first-server-setup.md` before running this on a production server.
+## Operations CLI
+
+After setup, use the app registry and CLI for inventory and basic diagnostics:
+
+```bash
+sudo nano /opt/apphost/apps.yml
+apphost list
+apphost status
+apphost doctor
+apphost logs <app>
+```
+
+See `docs/apphost-cli.md`.
