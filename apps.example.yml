@@ -1,0 +1,11 @@
+apps:
+  - name: example
+    repo: acjacobson/example
+    branch: main
+    host: example.com
+    path: /opt/apps/example
+    compose: /opt/apps/example/docker-compose.yml
+    healthcheck: https://example.com/healthz
+    env_file: /opt/apps/example/.env
+    data:
+      - /opt/apps/example/data

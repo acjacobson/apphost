@@ -12,6 +12,12 @@ jobs:
       - uses: actions/checkout@v6
       - name: Check shell script syntax
         run: bash -n scripts/*.sh
+      - name: Check apphost CLI syntax
+        run: python3 -m py_compile scripts/apphost
+      - name: Smoke test apphost CLI registry parsing
+        run: |
+          APPHOST_REGISTRY=apps.example.yml python3 scripts/apphost list | grep -q '^example'
+          python3 scripts/apphost --help >/tmp/apphost-help.txt
       - name: Validate shell scripts with ShellCheck
         run: |
           sudo apt-get update
