@@ -51,3 +51,9 @@ apphost logs <app>
 ```
 
 See `docs/apphost-cli.md`.
+
+## Adding apps
+
+App repositories own their deployment workflow. Apphost provides the host contract, shared Traefik network, and operational registry.
+
+See `docs/adding-an-app.md` for the required app repo shape, production Compose labels, GitHub Actions upload pattern, registry entry, and verification commands.
