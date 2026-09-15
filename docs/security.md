@@ -8,6 +8,8 @@ Do not commit real secrets. Keep runtime secrets in server-local `.env` files, G
 
 Use SSH key authentication for the deploy user. Avoid password SSH login on public servers.
 
+Apphost is a shared, trusted hobby host: the `deploy` user's Docker access is effectively root access, and application deployment credentials can control the entire VM, not just one app. Use a dedicated, revocable deployment SSH key stored in GitHub Actions secrets rather than your personal key.
+
 Recommended sequence:
 
 1. Bootstrap the host.
