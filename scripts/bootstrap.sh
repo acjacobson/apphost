@@ -18,6 +18,7 @@ apt-get install -y \
   curl \
   git \
   gnupg \
+  python3 \
   ufw \
   unattended-upgrades
 
@@ -36,6 +37,8 @@ if ! docker compose version >/dev/null 2>&1; then
   fi
 fi
 
+python3 "$(dirname "${BASH_SOURCE[0]}")/configure-docker-logging.py"
+# Do not restart an already-running daemon: that could interrupt existing apps.
 systemctl enable --now docker
 
 if ! id "$APP_USER" >/dev/null 2>&1; then
